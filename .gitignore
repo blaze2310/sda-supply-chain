@@ -1,0 +1,29 @@
+# Python environment and cache
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# macOS and editor files
+.DS_Store
+.vscode/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Large source and working datasets
+data/raw/
+data/cleaned/
+data/generated/
+data/api/
+data/mapped/
+data/master/
+
+# Keep the compact Assignment 2 sample
+!data/assignment2_sample/
+!data/assignment2_sample/supply_chain_sample.json
