@@ -34,12 +34,12 @@ The repository includes a compact JSON sample containing **50 records**:
 
 | Source | Records |
 |---|---:|
-| Global Superstore orders | 10 |
-| Manufacturing | 10 |
-| Shipping and logistics | 10 |
-| Inventory | 10 |
-| Retail sales | 10 |
-| **Total** | **50** |
+| Global Superstore orders | 25 |
+| Manufacturing | 25 |
+| Shipping and logistics | 25 |
+| Inventory | 25 |
+| Retail sales | 25 |
+| **Total** | **125** |
 
 The sample is stored at:
 
