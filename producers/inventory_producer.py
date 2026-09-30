@@ -1,18 +1,17 @@
 import json
-import time
 from pathlib import Path
 
 import pandas as pd
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
+
 KAFKA_BROKER = "localhost:9092"
 TOPIC = "supply_chain_events"
+
 FILE_PATH = Path(
-    "data/cleaned/inventory/retail_inventory_enriched.csv"
+    "data/cleaned/inventory/retail_inventory_cleaned.xlsx"
 )
-SAMPLE_SIZE = 35
-STREAM_DELAY_SECONDS = 0.5
 
 
 def clean_value(value):
@@ -32,7 +31,8 @@ try:
     producer = KafkaProducer(
         bootstrap_servers=KAFKA_BROKER,
         value_serializer=lambda value: json.dumps(
-            value, default=str
+            value,
+            default=str
         ).encode("utf-8"),
     )
 
@@ -44,14 +44,20 @@ except KafkaError as error:
     raise SystemExit(1)
 
 
-inventory_data = pd.read_csv(FILE_PATH).head(SAMPLE_SIZE)
+print(f"Loading inventory from {FILE_PATH}...")
 
-print(
-    f"Streaming {len(inventory_data)} inventory records "
-    f"to {TOPIC}...\n"
-)
+inventory_data = pd.read_excel(FILE_PATH)
 
-for index, row in inventory_data.iterrows():
+total_records = len(inventory_data)
+
+print(f"Loaded {total_records:,} inventory records.")
+print(f"Streaming all records to {TOPIC}...\n")
+
+
+for record_number, (_, row) in enumerate(
+    inventory_data.iterrows(),
+    start=1
+):
     payload = {
         column: clean_value(value)
         for column, value in row.to_dict().items()
@@ -59,29 +65,38 @@ for index, row in inventory_data.iterrows():
 
     entity_id = (
         payload.get("inventory_record_id")
-        or f"INV-{index + 1:06d}"
+        or f"INV-{record_number:06d}"
     )
 
     event = {
-        "event_id": f"INV-EVENT-{index + 1:06d}",
+        "event_id": f"INV-EVENT-{record_number:06d}",
         "event_type": "INVENTORY_STATUS_RECORDED",
         "source_system": "retail_inventory",
         "entity_id": entity_id,
         "payload": payload,
     }
 
-    producer.send(TOPIC, value=event)
-
-    print(
-        f"Sent {event['event_id']} | "
-        f"entity={entity_id} | "
-        f"source={event['source_system']}"
+    producer.send(
+        TOPIC,
+        key=str(entity_id).encode("utf-8"),
+        value=event,
     )
 
-    time.sleep(STREAM_DELAY_SECONDS)
+    if (
+        record_number == 1
+        or record_number % 5000 == 0
+        or record_number == total_records
+    ):
+        print(
+            f"Inventory: {record_number:,}/"
+            f"{total_records:,} sent"
+        )
 
 
 producer.flush()
 producer.close()
 
-print("\nInventory streaming completed.")
+print(
+    f"\nInventory completed: "
+    f"{total_records:,} events sent."
+)

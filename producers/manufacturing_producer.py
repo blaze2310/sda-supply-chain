@@ -1,18 +1,17 @@
 import json
-import time
 from pathlib import Path
 
 import pandas as pd
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
+
 KAFKA_BROKER = "localhost:9092"
 TOPIC = "supply_chain_events"
+
 FILE_PATH = Path(
-    "data/cleaned/manufacturing/manufacturing_enriched.xlsx"
+    "data/cleaned/manufacturing/manufacturing_cleaned.xlsx"
 )
-SAMPLE_SIZE = 30
-STREAM_DELAY_SECONDS = 0.5
 
 
 def clean_value(value):
@@ -32,7 +31,8 @@ try:
     producer = KafkaProducer(
         bootstrap_servers=KAFKA_BROKER,
         value_serializer=lambda value: json.dumps(
-            value, default=str
+            value,
+            default=str
         ).encode("utf-8"),
     )
 
@@ -44,14 +44,22 @@ except KafkaError as error:
     raise SystemExit(1)
 
 
-manufacturing_data = pd.read_excel(FILE_PATH).head(SAMPLE_SIZE)
+print(f"Loading manufacturing from {FILE_PATH}...")
+
+manufacturing_data = pd.read_excel(FILE_PATH)
+
+total_records = len(manufacturing_data)
 
 print(
-    f"Streaming {len(manufacturing_data)} manufacturing records "
-    f"to {TOPIC}...\n"
+    f"Loaded {total_records:,} manufacturing records."
 )
+print(f"Streaming all records to {TOPIC}...\n")
 
-for index, row in manufacturing_data.iterrows():
+
+for record_number, (_, row) in enumerate(
+    manufacturing_data.iterrows(),
+    start=1
+):
     payload = {
         column: clean_value(value)
         for column, value in row.to_dict().items()
@@ -59,29 +67,38 @@ for index, row in manufacturing_data.iterrows():
 
     entity_id = (
         payload.get("manufacturing_record_id")
-        or f"MFGREC-{index + 1:06d}"
+        or f"MFGREC-{record_number:06d}"
     )
 
     event = {
-        "event_id": f"MFG-EVENT-{index + 1:06d}",
+        "event_id": f"MFG-EVENT-{record_number:06d}",
         "event_type": "MANUFACTURING_BATCH_RECORDED",
         "source_system": "smart_manufacturing",
         "entity_id": entity_id,
         "payload": payload,
     }
 
-    producer.send(TOPIC, value=event)
-
-    print(
-        f"Sent {event['event_id']} | "
-        f"entity={entity_id} | "
-        f"source={event['source_system']}"
+    producer.send(
+        TOPIC,
+        key=str(entity_id).encode("utf-8"),
+        value=event,
     )
 
-    time.sleep(STREAM_DELAY_SECONDS)
+    if (
+        record_number == 1
+        or record_number % 1000 == 0
+        or record_number == total_records
+    ):
+        print(
+            f"Manufacturing: {record_number:,}/"
+            f"{total_records:,} sent"
+        )
 
 
 producer.flush()
 producer.close()
 
-print("\nManufacturing streaming completed.")
+print(
+    f"\nManufacturing completed: "
+    f"{total_records:,} events sent."
+)

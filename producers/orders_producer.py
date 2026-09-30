@@ -1,16 +1,17 @@
 import json
-import time
 from pathlib import Path
 
 import pandas as pd
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
+
 KAFKA_BROKER = "localhost:9092"
 TOPIC = "supply_chain_events"
-FILE_PATH = Path("data/cleaned/orders/global_superstore_enriched.xlsx")
-SAMPLE_SIZE = 35
-STREAM_DELAY_SECONDS = 0.5
+
+FILE_PATH = Path(
+    "data/cleaned/orders/orders_cleaned.xlsx"
+)
 
 
 def clean_value(value):
@@ -30,7 +31,8 @@ try:
     producer = KafkaProducer(
         bootstrap_servers=KAFKA_BROKER,
         value_serializer=lambda value: json.dumps(
-            value, default=str
+            value,
+            default=str
         ).encode("utf-8"),
     )
 
@@ -42,38 +44,59 @@ except KafkaError as error:
     raise SystemExit(1)
 
 
-orders = pd.read_excel(FILE_PATH).head(SAMPLE_SIZE)
+print(f"Loading orders from {FILE_PATH}...")
 
-print(f"Streaming {len(orders)} order records to {TOPIC}...\n")
+orders = pd.read_excel(FILE_PATH)
 
-for index, row in orders.iterrows():
+total_records = len(orders)
+
+print(f"Loaded {total_records:,} order records.")
+print(f"Streaming all records to {TOPIC}...\n")
+
+
+for record_number, (_, row) in enumerate(
+    orders.iterrows(),
+    start=1
+):
     payload = {
         column: clean_value(value)
         for column, value in row.to_dict().items()
     }
 
-    entity_id = payload.get("order_item_id") or f"GSITEM-{index + 1:06d}"
+    entity_id = (
+        payload.get("order_item_id")
+        or f"GSITEM-{record_number:06d}"
+    )
 
     event = {
-        "event_id": f"ORDER-EVENT-{index + 1:06d}",
+        "event_id": f"ORDER-EVENT-{record_number:06d}",
         "event_type": "ORDER_ITEM_CREATED",
         "source_system": "global_superstore",
         "entity_id": entity_id,
         "payload": payload,
     }
 
-    producer.send(TOPIC, value=event)
-
-    print(
-        f"Sent {event['event_id']} | "
-        f"entity={entity_id} | "
-        f"source={event['source_system']}"
+    producer.send(
+        TOPIC,
+        key=str(entity_id).encode("utf-8"),
+        value=event,
     )
 
-    time.sleep(STREAM_DELAY_SECONDS)
+    if (
+        record_number == 1
+        or record_number % 1000 == 0
+        or record_number == total_records
+    ):
+        print(
+            f"Orders: {record_number:,}/"
+            f"{total_records:,} sent"
+        )
 
 
 producer.flush()
 producer.close()
 
-print("\nOrder streaming completed.")
+print(
+    f"\nOrders completed: "
+    f"{total_records:,} events sent."
+)

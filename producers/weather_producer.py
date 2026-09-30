@@ -1,262 +1,210 @@
-import json
-import time
+import json, time
+from pathlib import Path
 
+import pandas as pd
 import requests
 from kafka import KafkaProducer
-from kafka.errors import KafkaError
 
-KAFKA_BROKER = "localhost:9092"
+
+# ---------- CONFIG ----------
+API = "https://power.larc.nasa.gov/api/temporal/daily/point"
+ORDERS = Path("data/cleaned/orders/orders_cleaned.xlsx")
+OUTPUT = Path("data/api/weather/historical_weather_data.xlsx")
+CACHE = Path("data/api/weather/nasa_power_cache")
 TOPIC = "supply_chain_events"
-WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
-POLL_INTERVAL_SECONDS = 60
 
-REGIONS = [
-    {
-        "market_clean": "APAC",
-        "region_clean": "Central Asia",
-        "reference_city": "Almaty",
-        "latitude": 43.2389,
-        "longitude": 76.8897,
-    },
-    {
-        "market_clean": "APAC",
-        "region_clean": "North Asia",
-        "reference_city": "Beijing",
-        "latitude": 39.9042,
-        "longitude": 116.4074,
-    },
-    {
-        "market_clean": "APAC",
-        "region_clean": "Oceania",
-        "reference_city": "Sydney",
-        "latitude": -33.8688,
-        "longitude": 151.2093,
-    },
-    {
-        "market_clean": "APAC",
-        "region_clean": "Southeast Asia",
-        "reference_city": "Singapore",
-        "latitude": 1.3521,
-        "longitude": 103.8198,
-    },
-    {
-        "market_clean": "Africa",
-        "region_clean": "Africa",
-        "reference_city": "Nairobi",
-        "latitude": -1.2921,
-        "longitude": 36.8219,
-    },
-    {
-        "market_clean": "Canada",
-        "region_clean": "Canada",
-        "reference_city": "Toronto",
-        "latitude": 43.6532,
-        "longitude": -79.3832,
-    },
-    {
-        "market_clean": "EMEA",
-        "region_clean": "EMEA",
-        "reference_city": "Dubai",
-        "latitude": 25.2048,
-        "longitude": 55.2708,
-    },
-    {
-        "market_clean": "EU",
-        "region_clean": "Central",
-        "reference_city": "Frankfurt",
-        "latitude": 50.1109,
-        "longitude": 8.6821,
-    },
-    {
-        "market_clean": "EU",
-        "region_clean": "North",
-        "reference_city": "Stockholm",
-        "latitude": 59.3293,
-        "longitude": 18.0686,
-    },
-    {
-        "market_clean": "EU",
-        "region_clean": "South",
-        "reference_city": "Rome",
-        "latitude": 41.9028,
-        "longitude": 12.4964,
-    },
-    {
-        "market_clean": "LATAM",
-        "region_clean": "Caribbean",
-        "reference_city": "Santo Domingo",
-        "latitude": 18.4861,
-        "longitude": -69.9312,
-    },
-    {
-        "market_clean": "LATAM",
-        "region_clean": "Central",
-        "reference_city": "Mexico City",
-        "latitude": 19.4326,
-        "longitude": -99.1332,
-    },
-    {
-        "market_clean": "LATAM",
-        "region_clean": "North",
-        "reference_city": "Monterrey",
-        "latitude": 25.6866,
-        "longitude": -100.3161,
-    },
-    {
-        "market_clean": "LATAM",
-        "region_clean": "South",
-        "reference_city": "Sao Paulo",
-        "latitude": -23.5505,
-        "longitude": -46.6333,
-    },
-    {
-        "market_clean": "US",
-        "region_clean": "Central",
-        "reference_city": "Chicago",
-        "latitude": 41.8781,
-        "longitude": -87.6298,
-    },
-    {
-        "market_clean": "US",
-        "region_clean": "East",
-        "reference_city": "New York",
-        "latitude": 40.7128,
-        "longitude": -74.0060,
-    },
-    {
-        "market_clean": "US",
-        "region_clean": "South",
-        "reference_city": "Dallas",
-        "latitude": 32.7767,
-        "longitude": -96.7970,
-    },
-    {
-        "market_clean": "US",
-        "region_clean": "West",
-        "reference_city": "Los Angeles",
-        "latitude": 34.0522,
-        "longitude": -118.2437,
-    },
-]
+CACHE.mkdir(parents=True, exist_ok=True)
+OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
+PARAMS = "T2M,T2M_MAX,T2M_MIN,RH2M,PRECTOTCORR,WS10M,WS10M_MAX"
 
-def make_region_id(market, region):
-    value = f"{market}-{region}".upper()
-    return "WEATHER-" + value.replace(" ", "-")
-
-
-try:
-    producer = KafkaProducer(
-        bootstrap_servers=KAFKA_BROKER,
-        value_serializer=lambda value: json.dumps(
-            value, default=str
-        ).encode("utf-8"),
-    )
-
-    producer.partitions_for(TOPIC)
-    print(f"Connected to Kafka at {KAFKA_BROKER}")
-
-except KafkaError as error:
-    print(f"Kafka connection failed: {error}")
-    raise SystemExit(1)
-
-
-latitudes = ",".join(str(region["latitude"]) for region in REGIONS)
-longitudes = ",".join(str(region["longitude"]) for region in REGIONS)
-
-params = {
-    "latitude": latitudes,
-    "longitude": longitudes,
-    "current": (
-        "temperature_2m,relative_humidity_2m,"
-        "precipitation,weather_code,"
-        "wind_speed_10m,wind_direction_10m"
-    ),
-    "timezone": "auto",
+mapping = {
+    "T2M": "temperature_2m_mean",
+    "T2M_MAX": "temperature_2m_max",
+    "T2M_MIN": "temperature_2m_min",
+    "RH2M": "relative_humidity_2m_mean",
+    "PRECTOTCORR": "precipitation_sum",
+    "WS10M": "wind_speed_10m_mean",
+    "WS10M_MAX": "wind_speed_10m_max",
 }
 
-cycle_number = 1
 
-print(f"Streaming live weather for {len(REGIONS)} regions...")
-print("Press Control + C to stop.\n")
+# ---------- EXACT REQUIREMENTS FROM ORDERS ----------
+orders = pd.read_excel(ORDERS)
+orders["weather_date"] = pd.to_datetime(orders["order_date"]).dt.date
 
-try:
-    while True:
-        response = requests.get(
-            WEATHER_API_URL,
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
+cols = [
+    "location_id", "weather_date", "city", "state", "country",
+    "market", "region", "latitude", "longitude"
+]
 
-        weather_results = response.json()
+req = orders[cols].drop_duplicates(["location_id", "weather_date"])
 
-        if isinstance(weather_results, dict):
-            weather_results = [weather_results]
+if len(req) != 21376 or req["location_id"].nunique() != 359:
+    raise RuntimeError(
+        f"SAFETY STOP: expected 21,376 rows / 359 locations, "
+        f"found {len(req):,} / {req['location_id'].nunique():,}"
+    )
 
-        for index, (region, result) in enumerate(
-            zip(REGIONS, weather_results),
-            start=1,
-        ):
-            current = result["current"]
+print(f"Required records : {len(req):,}")
+print(f"Locations        : {req['location_id'].nunique():,}")
+print(f"Date range       : {req.weather_date.min()} -> {req.weather_date.max()}\n")
 
-            weather_region_id = make_region_id(
-                region["market_clean"],
-                region["region_clean"],
-            )
 
-            event = {
-                "event_id": (
-                    f"WEATHER-EVENT-{cycle_number:04d}-{index:03d}"
-                ),
-                "event_type": "WEATHER_OBSERVED",
-                "source_system": "open_meteo",
-                "entity_id": weather_region_id,
-                "payload": {
-                    "weather_region_id": weather_region_id,
-                    "market_clean": region["market_clean"],
-                    "region_clean": region["region_clean"],
-                    "reference_city": region["reference_city"],
-                    "latitude": region["latitude"],
-                    "longitude": region["longitude"],
-                    "temperature_c": current.get("temperature_2m"),
-                    "relative_humidity_pct": current.get(
-                        "relative_humidity_2m"
-                    ),
-                    "precipitation_mm": current.get("precipitation"),
-                    "weather_code": current.get("weather_code"),
-                    "wind_speed_kmh": current.get("wind_speed_10m"),
-                    "wind_direction_deg": current.get(
-                        "wind_direction_10m"
-                    ),
-                },
-            }
+# ---------- NASA POWER ----------
+session = requests.Session()
+frames = []
 
-            producer.send(TOPIC, value=event)
+for n, (location_id, group) in enumerate(req.groupby("location_id"), 1):
 
-            print(
-                f"Sent {event['event_id']} | "
-                f"entity={weather_region_id} | "
-                f"city={region['reference_city']} | "
-                f"temperature={current.get('temperature_2m')} C"
-            )
+    info = group.iloc[0]
+    required_dates = set(group["weather_date"])
+    cache_file = CACHE / f"{location_id}.csv"
 
-        producer.flush()
+    print(f"[{n}/359] {location_id} | {info['city']}")
 
-        print(
-            f"\nCycle {cycle_number} completed. "
-            f"Next update in {POLL_INTERVAL_SECONDS} seconds.\n"
-        )
+    # Use valid cache if already downloaded
+    if cache_file.exists():
+        df = pd.read_csv(cache_file)
+        df["weather_date"] = pd.to_datetime(df["weather_date"]).dt.date
 
-        cycle_number += 1
-        time.sleep(POLL_INTERVAL_SECONDS)
+        if required_dates.issubset(set(df["weather_date"])):
+            print("    CACHE OK")
+        else:
+            df = None
+    else:
+        df = None
 
-except KeyboardInterrupt:
-    print("\nWeather streaming stopped.")
+    # Download if no complete cache
+    if df is None:
+        params = {
+            "parameters": PARAMS,
+            "community": "AG",
+            "longitude": float(info["longitude"]),
+            "latitude": float(info["latitude"]),
+            "start": min(required_dates).strftime("%Y%m%d"),
+            "end": max(required_dates).strftime("%Y%m%d"),
+            "format": "JSON",
+            "time-standard": "UTC",
+        }
 
-except requests.RequestException as error:
-    print(f"Weather API request failed: {error}")
+        # Retry temporary errors
+        for attempt in range(5):
+            try:
+                r = session.get(API, params=params, timeout=120)
+                r.raise_for_status()
+                data = r.json()["properties"]["parameter"]
+                break
+            except Exception as e:
+                if attempt == 4:
+                    raise RuntimeError(f"{location_id} failed: {e}")
+                wait = 15 * (attempt + 1)
+                print(f"    Retry in {wait}s...")
+                time.sleep(wait)
 
-finally:
-    producer.flush()
-    producer.close()
+        dates = sorted(data["T2M"])
+        df = pd.DataFrame({"weather_date": pd.to_datetime(dates).date})
+
+        for nasa_name, column_name in mapping.items():
+            df[column_name] = [data[nasa_name].get(d) for d in dates]
+
+        df.to_csv(cache_file, index=False)
+        print(f"    Downloaded {len(df):,} daily records")
+        time.sleep(2)
+
+    # Keep only dates actually required by Orders
+    df = df[df["weather_date"].isin(required_dates)].copy()
+
+    if set(df["weather_date"]) != required_dates:
+        raise RuntimeError(f"SAFETY STOP: missing dates for {location_id}")
+
+    # Add finalized location metadata
+    for c in ["city", "state", "country", "market", "region", "latitude", "longitude"]:
+        df[c] = info[c]
+
+    df["location_id"] = location_id
+    df["weather_code"] = None
+    frames.append(df)
+
+
+# ---------- FINAL DATASET ----------
+weather = pd.concat(frames, ignore_index=True)
+
+final_cols = [
+    "location_id", "weather_date", "city", "state", "country",
+    "market", "region", "latitude", "longitude",
+    "temperature_2m_mean", "temperature_2m_max", "temperature_2m_min",
+    "relative_humidity_2m_mean", "precipitation_sum", "weather_code",
+    "wind_speed_10m_mean", "wind_speed_10m_max"
+]
+
+weather = weather[final_cols].sort_values(["location_id", "weather_date"])
+
+pairs = weather[["location_id", "weather_date"]].drop_duplicates()
+
+if len(weather) != 21376 or len(pairs) != 21376:
+    raise RuntimeError(
+        f"SAFETY STOP: expected 21,376 unique records, found "
+        f"{len(weather):,} rows / {len(pairs):,} unique pairs. "
+        "Nothing sent to Kafka."
+    )
+
+weather.to_excel(OUTPUT, index=False)
+
+print("\nVALIDATION PASSED")
+print(f"Records   : {len(weather):,}")
+print(f"Locations : {weather.location_id.nunique():,}")
+print(f"Dates     : {weather.weather_date.min()} -> {weather.weather_date.max()}")
+print(f"Saved     : {OUTPUT}")
+
+
+# ---------- KAFKA ----------
+producer = KafkaProducer(
+    bootstrap_servers="localhost:9092",
+    value_serializer=lambda x: json.dumps(x, default=str).encode(),
+    acks="all",
+)
+
+for n, (_, row) in enumerate(weather.iterrows(), 1):
+
+    date = pd.to_datetime(row["weather_date"]).date()
+    value = lambda x: None if pd.isna(x) else float(x)
+
+    payload = {
+        "location_id": row["location_id"],
+        "weather_date": date.isoformat(),
+        "city": row["city"],
+        "state": row["state"],
+        "country": row["country"],
+        "market": row["market"],
+        "region": row["region"],
+        "latitude": value(row["latitude"]),
+        "longitude": value(row["longitude"]),
+        "temperature_2m_mean": value(row["temperature_2m_mean"]),
+        "temperature_2m_max": value(row["temperature_2m_max"]),
+        "temperature_2m_min": value(row["temperature_2m_min"]),
+        "relative_humidity_2m_mean": value(row["relative_humidity_2m_mean"]),
+        "precipitation_sum": value(row["precipitation_sum"]),
+        "weather_code": None,
+        "wind_speed_10m_mean": value(row["wind_speed_10m_mean"]),
+        "wind_speed_10m_max": value(row["wind_speed_10m_max"]),
+    }
+
+    event = {
+        "event_id": f"WEATHER-{row['location_id']}-{date:%Y%m%d}",
+        "event_type": "WEATHER_HISTORICAL",
+        "source_system": "nasa_power",
+        "entity_id": row["location_id"],
+        "event_timestamp": f"{date}T00:00:00",
+        "payload": payload,
+    }
+
+    producer.send(TOPIC, value=event)
+
+    if n == 1 or n % 1000 == 0:
+        print(f"Kafka: {n:,}/21,376")
+
+producer.flush()
+producer.close()
+
+print("\nCOMPLETE: 21,376 historical weather events published.")
