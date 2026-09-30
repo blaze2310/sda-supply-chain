@@ -1,229 +1,481 @@
-# Supply Chain Streaming Analytics
+# Supply Chain Streaming Analytics — End-to-End Project
 
-A Python and Apache Kafka project demonstrating a hybrid supply-chain data pipeline using static business datasets, live weather API data and simulated customer activity.
+A complete supply-chain streaming analytics project built for **Streaming Data Analytics (SDA-2)** at **FORE School of Management**.
 
-Developed for **Streaming Data Analytics — SDA-2** at **FORE School of Management**.
+The project combines finalized business datasets, Python producers, Apache Kafka, MySQL, MongoDB / MongoDB Atlas, NASA POWER historical weather data, and Grafana dashboards to create an end-to-end supply-chain control-tower pipeline.
 
 **Student:** Rishabh Verma  
-**Current milestone:** Assignment 2 — Sample Data & Kafka Producer  
-**Kafka topic:** `supply_chain_events`
+**Kafka topic:** `supply_chain_events`  
+**Primary analytics database:** `supply_chain_db`  
+**Dashboard:** Grafana — *Real-Time Supply Chain Control Tower*
 
 ---
 
-## 1. Project Overview
+## 1. Business Problem
 
-Supply-chain analysis brings together information from multiple business functions, including orders, manufacturing, shipments, inventory and customer activity.
+Supply-chain information is usually fragmented across orders, customers, inventory, manufacturing, logistics, retail sales and external conditions.
 
-This project demonstrates how records from these sources can be converted into JSON events and published to a common Kafka topic.
+That fragmentation makes it difficult to identify risks early, understand operational bottlenecks, or connect customer demand with inventory and fulfilment.
 
-The pipeline combines:
+This project addresses that problem by creating a common streaming architecture that:
 
-- **Static data replay:** Existing order, manufacturing, shipping, inventory and retail-sales records are streamed row by row.
-- **Live API polling:** Weather data is fetched from Open-Meteo for selected reference locations.
-- **Simulated real-time activity:** Python generates customer interactions using customer and product identifiers from Global Superstore.
+1. standardizes finalized source datasets,
+2. publishes source events to Kafka,
+3. persists events into operational databases,
+4. joins business entities through common identifiers, and
+5. visualizes operational KPIs and risk indicators in Grafana.
 
-A Python consumer reads events from Kafka, displays their contents and counts messages by source.
-
-Assignment 2 focuses on ingestion and demonstrating successful message flow. Detailed cross-dataset reconciliation, stream processing and database integration are planned for later stages.
-
----
-
-## 2. Quick Demonstration
-
-The repository includes a compact JSON sample containing **50 records**:
-
-| Source | Records |
-|---|---:|
-| Global Superstore orders | 25 |
-| Manufacturing | 25 |
-| Shipping and logistics | 25 |
-| Inventory | 25 |
-| Retail sales | 25 |
-| **Total** | **125** |
-
-The sample is stored at:
-
-```text
-data/assignment2_sample/supply_chain_sample.json
-```
-
-Run the demonstration using:
-
-```bash
-python sample_producer.py
-```
-
-This producer reads the included sample directly and does not require the full Excel or CSV datasets.
-
-The 50-record file contains static-source events only. Live weather and generated customer activity have separate producers.
+The overall objective is **real-time end-to-end supply-chain visibility and risk monitoring**.
 
 ---
 
-## 3. Pipeline Architecture
+## 2. End-to-End Architecture
 
 ```mermaid
-flowchart TD
-    A["Static business datasets"] --> B["Static-source producers"]
-    C["Open-Meteo API"] --> D["Weather producer"]
-    E["Python activity simulation"] --> F["Customer activity producer"]
-    G["Included 125-record JSON sample"] --> H["Sample producer"]
+flowchart LR
+    A["Finalized static datasets"] --> P["Python producers"]
+    B["NASA POWER Daily API"] --> W["Historical weather producer"]
+    C["Simulated customer activity"] --> CA["Customer activity producer"]
 
-    B --> K["Kafka: supply_chain_events"]
-    D --> K
-    F --> K
-    H --> K
+    P --> K["Kafka: supply_chain_events"]
+    W --> K
+    CA --> K
 
-    K --> L["Python consumer"]
-    L --> M["Terminal output and source counts"]
+    K --> M["MongoDB consumer"]
+    K --> S["MySQL consumer"]
+
+    CM["Customer master"] --> MDB["MongoDB / MongoDB Atlas"]
+    CM --> MYSQL["MySQL"]
+
+    M --> MDB
+    S --> MYSQL
+
+    MYSQL --> G["Grafana"]
+    G --> D["Real-Time Supply Chain Control Tower"]
 ```
 
-Kafka transports and stores the events. It does not automatically join orders, shipments and weather records.
+### Current implementation
 
-Matching fields are included in the messages so that downstream processing can be added later.
+The implemented flow is:
 
----
+```text
+Finalized datasets / API
+        ↓
+Python producers
+        ↓
+Kafka — supply_chain_events
+        ↓
+Python persistence consumers
+        ↓
+MySQL + MongoDB / MongoDB Atlas
+        ↓
+SQL joins and business logic
+        ↓
+Grafana dashboard
+        ↓
+Supply-chain decisions
+```
 
-## 4. Data Sources
-
-| Source | Input type | Purpose | Source-system identifier |
-|---|---|---|---|
-| Global Superstore | Local Excel dataset | Order-item and customer/product information | `global_superstore` |
-| Smart Manufacturing | Local Excel dataset | Material usage, energy consumption and production output | `smart_manufacturing` |
-| E-commerce Shipping | Local Excel dataset | Shipment status and fulfilment information | `ecommerce_shipping` |
-| Retail Inventory | Local CSV dataset | Stock quantities and inventory information | `retail_inventory` |
-| Retail Sales | Local CSV dataset | Retail transaction information | `retail_sales` |
-| Open-Meteo | HTTP API returning JSON | Current weather at reference locations | `open_meteo` |
-| Customer Activity Simulator | Python-generated events | Simulated browsing and purchase-related activity | `python_customer_simulator` |
-
-The static datasets have been enriched with identifiers, calculated fields and source metadata.
-
-They remain independent datasets. Identifiers and relationships are preliminary and should not be interpreted as fully reconciled real-world supply-chain relationships.
-
----
-
-## 5. Repository Contents
-
-| File or folder | Purpose |
-|---|---|
-| `docker-compose.yml` | Defines Kafka, Zookeeper, Spark, MongoDB and MySQL services |
-| `requirements.txt` | Python dependencies |
-| `sample_producer.py` | Streams the included 50-record JSON sample |
-| `producer.py` | Reads samples from the full local cleaned datasets |
-| `producers/orders_producer.py` | Streams Global Superstore order records |
-| `producers/manufacturing_producer.py` | Streams manufacturing records |
-| `producers/logistics_producer.py` | Streams shipping records |
-| `producers/inventory_producer.py` | Streams inventory records |
-| `producers/retail_sales_producer.py` | Streams retail-sales records |
-| `producers/weather_producer.py` | Polls Open-Meteo and publishes weather events |
-| `producers/customer_activity_producer.py` | Generates and publishes simulated customer activity |
-| `consumers/supply_chain_consumer.py` | Reads events and displays source-level counts |
-| `scripts/create_assignment2_sample.py` | Builds the compact JSON sample from local cleaned datasets |
-| `data/assignment2_sample/supply_chain_sample.json` | Included 50-record submission sample |
-| `db/` | Database initialization files reserved for later work |
-| `.gitignore` | Excludes environments, caches and large working datasets |
-
-### Files not included in Git
-
-Large source datasets, cleaned workbooks, generated working files and the Python virtual environment are excluded.
-
-They are not required for the sample demonstration.
-
-The full-data producers and the sample-generation script require the corresponding local datasets.
+Spark remains available in Docker Compose for future stream-processing work, but it is **not required for the current dashboard pipeline**.
 
 ---
 
-## 6. Technology Stack
+## 3. Final Data Sources
+
+| Domain | Final source | Final records | Purpose |
+|---|---|---:|---|
+| Orders | `data/cleaned/orders/orders_cleaned.xlsx` | 51,290 | Order, customer, product, sales and profitability data |
+| Customers | `data/cleaned/customer/customer_master.xlsx` | 1,590 | Customer master and customer-level aggregates |
+| Inventory | `data/cleaned/inventory/retail_inventory_cleaned.xlsx` | 284,755 | Historical inventory snapshots |
+| Retail sales | `data/cleaned/inventory/retail_sales_cleaned.xlsx` | 125,751 | Retail sales and returns |
+| Manufacturing | `data/cleaned/manufacturing/manufacturing_cleaned.xlsx` | 10,000 | Production, defects, material and energy metrics |
+| Logistics | `data/cleaned/logistics/logistics_cleaned.xlsx` | 10,999 | Shipment and fulfilment performance |
+| Customer activity | `data/generated/customer_activity/customer_activity_events.jsonl` | 41 | Simulated activity tied to finalized identifiers |
+| Weather | `data/api/weather/historical_weather_data.xlsx` | 21,376 | Historical weather aligned to order locations and dates |
+| Weather location master | `data/api/weather/weather_location_master.xlsx` | 359 locations | Location reference for weather integration |
+
+The repository includes the finalized datasets used by the current project. Archival `old/` folders were intentionally removed to avoid duplicate and obsolete versions.
+
+---
+
+## 4. Cross-Dataset Relationships
+
+The final relationship model is:
+
+```text
+CUSTOMERS -- customer_id --> ORDERS
+
+ORDERS -- order_item_id --> LOGISTICS
+
+ORDERS -- product_id --> INVENTORY
+ORDERS -- product_id --> RETAIL SALES
+ORDERS -- product_id --> MANUFACTURING
+
+ORDERS -- location_id --> WEATHER
+
+ORDERS -- major business IDs --> CUSTOMER ACTIVITY
+```
+
+### Verified relationship coverage
+
+- Customers ↔ Orders: all 1,590 customer IDs represented.
+- Orders ↔ Logistics: 10,999 / 10,999 logistics rows match on `order_item_id`.
+- Customer Activity ↔ Orders: all 41 generated events match across order/customer/product/location identifiers.
+- Inventory, Retail Sales and Manufacturing each use 2,326 product IDs that are also present in Orders.
+- Weather contains 359 finalized locations, matching all 359 order locations.
+
+---
+
+## 5. Kafka Streaming Layer
+
+### Topic
+
+```text
+supply_chain_events
+```
+
+Configuration:
+
+- Partitions: 3
+- Replication factor: 1
+- Local broker: `localhost:9092`
+
+Static datasets are replayed as Kafka events through dedicated Python producers.
+
+### Producers
+
+```text
+producers/orders_producer.py
+producers/inventory_producer.py
+producers/retail_sales_producer.py
+producers/manufacturing_producer.py
+producers/logistics_producer.py
+producers/customer_activity_producer.py
+producers/weather_producer.py
+```
+
+### Standard event envelope
+
+```json
+{
+  "event_id": "unique-event-id",
+  "event_type": "business-event-type",
+  "source_system": "source-name",
+  "entity_id": "business-entity-id",
+  "event_timestamp": "timestamp",
+  "payload": {
+    "...": "source-specific fields"
+  }
+}
+```
+
+---
+
+## 6. NASA POWER Historical Weather Integration
+
+Historical weather is sourced from the **NASA POWER Daily Point API**.
+
+API endpoint used by the producer:
+
+```text
+https://power.larc.nasa.gov/api/temporal/daily/point
+```
+
+The historical weather producer is:
+
+```text
+producers/weather_producer.py
+```
+
+It requests:
+
+- `T2M` — mean temperature at 2 m
+- `T2M_MAX` — maximum temperature
+- `T2M_MIN` — minimum temperature
+- `RH2M` — relative humidity
+- `PRECTOTCORR` — corrected precipitation
+- `WS10M` — mean wind speed
+- `WS10M_MAX` — maximum wind speed
+
+The producer derives exact `location_id + weather_date` requirements from finalized Orders data.
+
+### Final validated weather coverage
+
+- **21,376 records**
+- **359 locations**
+- Date range: **2022-01-01 to 2025-12-31**
+- Event type: `WEATHER_HISTORICAL`
+- Source system: `nasa_power`
+
+### API key
+
+**No NASA API key is required for the implementation used in this project.**
+
+The producer sends normal HTTPS requests to the NASA POWER Daily Point endpoint with coordinates, dates and parameter names. There is therefore **no NASA API secret stored in the repository, environment file, or source code**.
+
+The local download cache under:
+
+```text
+data/api/weather/nasa_power_cache/
+```
+
+is excluded from Git because the finalized weather workbook is already included.
+
+---
+
+## 7. Database Layer
+
+The project uses two persistence paths.
+
+### MySQL
+
+Primary database:
+
+```text
+supply_chain_db
+```
+
+Final analytical tables:
+
+1. `orders`
+2. `customers`
+3. `inventory`
+4. `retail_sales`
+5. `manufacturing`
+6. `logistics`
+7. `customer_activity`
+8. `weather`
+
+MySQL is the primary datasource for Grafana.
+
+### MongoDB / MongoDB Atlas
+
+MongoDB is retained as an additional persistence layer for the streaming domains and customer reference data.
+
+The MongoDB consumer reads the Kafka topic and writes events into domain collections. MongoDB Atlas was also populated during project development.
+
+Historical weather was intentionally kept in the MySQL analytics path for the Grafana implementation.
+
+### Credentials
+
+External credentials are **not hard-coded in the repository**.
+
+For Atlas, `consumers/mongodb_consumer.py` reads:
+
+```text
+MONGO_URI
+```
+
+from the environment and otherwise defaults to local MongoDB.
+
+Never commit production credentials, connection strings or API secrets.
+
+---
+
+## 8. Persistence Consumers
+
+### MongoDB consumer
+
+```text
+consumers/mongodb_consumer.py
+```
+
+Responsibilities include:
+
+- Kafka subscription
+- JSON deserialization
+- domain routing
+- MongoDB writes
+- duplicate-safe persistence logic
+
+### MySQL consumer
+
+```text
+consumers/mysql_consumer.py
+```
+
+The current checked-in MySQL consumer is the dedicated historical-weather consumer. It uses the independent Kafka group:
+
+```text
+supply-chain-mysql-weather-historical
+```
+
+and writes only `WEATHER_HISTORICAL` events into MySQL.
+
+This separation avoids changing the committed offsets of the previously finalized general MySQL ingestion flow.
+
+---
+
+## 9. Grafana — Real-Time Supply Chain Control Tower
+
+Grafana connects directly to MySQL and provides the final analytics interface.
+
+### Final dashboard sections
+
+1. **Executive Overview**
+2. **Customer & Demand**
+3. **Sales & Orders**
+4. **Inventory Health**
+5. **Manufacturing**
+6. **Logistics & Fulfilment**
+7. **External Conditions**
+
+### Dashboard filters
+
+The dashboard supports:
+
+```text
+Financial Year | Market | Region | Country | Category | Product
+```
+
+The Financial Year variable follows the Indian financial year:
+
+```text
+1 April → 31 March
+```
+
+### Dashboard principles
+
+Each panel is designed around:
+
+```text
+Business Question
+        ↓
+What the panel shows
+        ↓
+Decision / investigation supported
+```
+
+The dashboard uses time-series charts, KPI/stat panels, categorical comparisons, tables and maps.
+
+---
+
+## 10. Inventory Coverage
+
+Inventory is a historical snapshot dataset rather than a single current-stock table.
+
+Final inventory coverage:
+
+```text
+2025-06-01 → 2026-04-24
+```
+
+The inventory trend therefore uses the available inventory period directly rather than forcing the dashboard Financial Year variable onto a period where historical coverage does not exist.
+
+---
+
+## 11. Technology Stack
 
 - Python
 - Apache Kafka
 - Zookeeper
-- Docker and Docker Compose
-- `kafka-python`
-- `pandas`
-- `openpyxl`
-- `requests`
+- Docker / Docker Compose
+- MySQL 8
+- MongoDB
+- MongoDB Atlas
+- Grafana
+- NASA POWER API
+- pandas
+- openpyxl
+- kafka-python
+- requests
+- pymongo
+- mysql-connector-python
 
-The development environment used macOS and Python 3.14.
-
-Spark, MongoDB and MySQL are retained in Docker Compose for later project stages. Assignment 2 does not yet implement Spark transformations or database-writing consumers.
+Spark 3.5.6 is available in Docker Compose for future processing work.
 
 ---
 
-## 7. Setup Instructions
+## 12. Repository Structure
 
-### 7.1 Prerequisites
+```text
+sda-supply-chain/
+│
+├── consumers/
+│   ├── mongodb_consumer.py
+│   ├── mysql_consumer.py
+│   └── supply_chain_consumer.py
+│
+├── producers/
+│   ├── orders_producer.py
+│   ├── inventory_producer.py
+│   ├── retail_sales_producer.py
+│   ├── manufacturing_producer.py
+│   ├── logistics_producer.py
+│   ├── customer_activity_producer.py
+│   └── weather_producer.py
+│
+├── data/
+│   ├── api/weather/
+│   ├── assignment2_sample/
+│   ├── cleaned/
+│   │   ├── customer/
+│   │   ├── inventory/
+│   │   ├── logistics/
+│   │   ├── manufacturing/
+│   │   └── orders/
+│   ├── generated/customer_activity/
+│   └── raw/
+│
+├── db/
+│   ├── mongo-init.js
+│   └── mysql-init.sql
+│
+├── scripts/
+├── docker-compose.yml
+├── requirements.txt
+└── README.md
+```
 
-Install and start:
+Large local database dumps, BSON migration files, the Python virtual environment and temporary NASA cache files are intentionally excluded through `.gitignore`.
 
-- Git
-- Python 3
-- Docker Desktop with Docker Compose
+---
 
-An internet connection is required to install dependencies, download Docker images and call Open-Meteo.
+## 13. Setup
 
-### 7.2 Clone the repository
+### Clone
 
 ```bash
 git clone https://github.com/blaze2310/sda-supply-chain.git
 cd sda-supply-chain
 ```
 
-Run the commands below from this project directory.
+### Create a virtual environment
 
-### 7.3 Create a virtual environment
-
-On macOS or Linux:
+macOS / Linux:
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 py -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-Install dependencies:
+### Install dependencies
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Verify the imports:
-
-```bash
-python -c "from kafka import KafkaProducer, KafkaConsumer; import pandas, openpyxl, requests; print('Environment ready')"
-```
-
-### 7.4 Start Docker services
-
-To start the complete development stack:
+### Start Docker services
 
 ```bash
 docker compose up -d
 ```
 
-For only the services needed by the Kafka demonstration:
-
-```bash
-docker compose up -d zookeeper kafka
-```
-
-Check the containers:
+Check:
 
 ```bash
 docker compose ps
 ```
 
-A container showing `Up` means its process is running. The Kafka commands below additionally check that the broker is responding.
-
-If another project already uses the same host ports, stop the conflicting services or change the port configuration before starting this stack.
-
-### 7.5 Create the Kafka topic
+### Create Kafka topic if required
 
 ```bash
 docker compose exec kafka kafka-topics.sh \
@@ -235,483 +487,153 @@ docker compose exec kafka kafka-topics.sh \
   --replication-factor 1
 ```
 
-List the topics:
-
-```bash
-docker compose exec kafka kafka-topics.sh \
-  --list \
-  --bootstrap-server localhost:9092
-```
-
-Describe the project topic:
-
-```bash
-docker compose exec kafka kafka-topics.sh \
-  --describe \
-  --topic supply_chain_events \
-  --bootstrap-server localhost:9092
-```
-
-The topic uses three partitions and one replica because this is a single-broker local demonstration.
-
 ---
 
-## 8. Run the Assignment 2 Sample
+## 14. Running Producers
 
-Use two terminals.
-
-### Terminal 1 — Consumer
-
-Activate the virtual environment and run:
-
-```bash
-python consumers/supply_chain_consumer.py
-```
-
-Leave this terminal running.
-
-### Terminal 2 — Sample producer
-
-Activate the virtual environment and run:
-
-```bash
-python sample_producer.py
-```
-
-The sample producer:
-
-1. Opens the included JSON sample.
-2. Connects to `localhost:9092`.
-3. Checks that the topic is available.
-4. Serializes each event as UTF-8 JSON.
-5. Sends the event to Kafka.
-6. Waits for the broker acknowledgement.
-7. Prints the source, entity, partition and offset.
-8. Waits 0.5 seconds before sending the next event.
-
-The expected completion message is:
-
-```text
-Completed successfully. 50 messages acknowledged by Kafka.
-```
-
-The producer then exits. The consumer remains running until stopped with `Control + C`.
-
-### Important replay behaviour
-
-Running the sample producer again sends another copy of all 50 events.
-
-Existing Kafka messages are not automatically replaced or deduplicated.
-
----
-
-## 9. Message Structure
-
-All producers use a common outer structure:
-
-```json
-{
-  "event_id": "MAIN-GSITEM-EVENT-000001",
-  "event_type": "ORDER_ITEM_CREATED",
-  "source_system": "global_superstore",
-  "entity_id": "GSITEM-000001",
-  "payload": {
-    "order_item_id": "GSITEM-000001",
-    "order_id": "GSORD-000001",
-    "quantity": 3,
-    "sales": 13.08
-  }
-}
-```
-
-The example payload is shortened for readability. The included sample retains the selected source records' fields.
-
-| Field | Meaning |
-|---|---|
-| `event_id` | Identifier assigned to the event |
-| `event_type` | Business event classification |
-| `source_system` | Origin of the event |
-| `entity_id` | Identifier of the relevant business entity or session |
-| `payload` | Source-specific record fields |
-
-### Event types
-
-| Source | Event type |
-|---|---|
-| Orders | `ORDER_ITEM_CREATED` |
-| Manufacturing | `MANUFACTURING_BATCH_RECORDED` |
-| Logistics | `SHIPMENT_STATUS_RECORDED` |
-| Inventory | `INVENTORY_STATUS_RECORDED` |
-| Retail sales | `RETAIL_SALE_RECORDED` |
-| Weather | `WEATHER_OBSERVED` |
-| Customer activity | `CUSTOMER_ACTIVITY_RECORDED` |
-
----
-
-## 10. Individual Static-Source Producers
-
-These producers require the full cleaned datasets at the following paths:
-
-```text
-data/cleaned/orders/global_superstore_enriched.xlsx
-data/cleaned/manufacturing/manufacturing_enriched.xlsx
-data/cleaned/logistics/ecommerce_shipping_enriched.xlsx
-data/cleaned/inventory/retail_inventory_enriched.csv
-data/cleaned/inventory/retail_sales_enriched.csv
-```
-
-Run a source independently:
+Static producers can be run independently:
 
 ```bash
 python producers/orders_producer.py
-python producers/manufacturing_producer.py
-python producers/logistics_producer.py
 python producers/inventory_producer.py
 python producers/retail_sales_producer.py
+python producers/manufacturing_producer.py
+python producers/logistics_producer.py
 ```
 
-Alternatively, run the root producer to sample all five local sources:
-
-```bash
-python producer.py
-```
-
-The individual producers were initially tested with 30–35 records per source. The submission JSON contains 10 records per source.
-
-Reading a complete file into Python does not mean the complete file is sent to Kafka: the configured sample limit controls how many records are published.
-
-### Regenerate the submission sample
-
-If the full local datasets are available:
-
-```bash
-python scripts/create_assignment2_sample.py
-```
-
-This regenerates the JSON file with 10 records per static source.
-
-It does not send messages to Kafka or modify the source datasets.
-
----
-
-## 11. Live Weather Producer
-
-Run:
-
-```bash
-python producers/weather_producer.py
-```
-
-The weather producer requests current conditions from Open-Meteo and publishes one event for each of 18 configured market-region combinations.
-
-It polls approximately every 60 seconds and continues until stopped with `Control + C`.
-
-### Weather fields
-
-- Market and region
-- Reference city
-- Latitude and longitude
-- Temperature in degrees Celsius
-- Relative humidity percentage
-- Precipitation in millimetres
-- Weather code
-- Wind speed in kilometres per hour
-- Wind direction in degrees
-
-### Market-region identification
-
-Names such as `Central` and `South` are ambiguous when used alone.
-
-Weather events therefore include:
-
-```text
-market_clean + region_clean
-```
-
-For example:
-
-```text
-EU + Central
-US + Central
-LATAM + Central
-```
-
-These are separate combinations.
-
-### Geographic limitation
-
-The current implementation uses one manually selected reference city per market-region combination.
-
-It retrieves weather at that coordinate—not an average or complete representation of the entire business region. The reference-city mapping is a demonstration assumption and has not been fully validated against every location in the source dataset.
-
-The producer supplies matching fields; the current consumer does not perform a weather-to-orders join.
-
-Current weather also must not be interpreted as the historical weather associated with old order dates.
-
-### Polling versus weather updates
-
-Repeated requests may return identical values. Polling every minute does not mean weather data changes every minute.
-
-This producer streams model-based current conditions from Open-Meteo, not a direct physical sensor feed.
-
----
-
-## 12. Simulated Customer Activity
-
-Run:
+Customer activity:
 
 ```bash
 python producers/customer_activity_producer.py
 ```
 
-This producer requires:
+Historical weather:
 
-```text
-data/cleaned/orders/global_superstore_enriched.xlsx
+```bash
+python producers/weather_producer.py
 ```
 
-It reads the existing customer and product IDs, then generates simulated activity approximately once per second.
-
-Supported activity types include:
-
-- `product_view`
-- `search`
-- `add_to_cart`
-- `remove_from_cart`
-- `checkout_started`
-- `purchase`
-
-Additional fields include:
-
-- Session ID
-- Customer ID
-- Product ID
-- Device type
-- Traffic source
-- Quantity
-- Cart value
-
-Generated events are also appended locally to:
-
-```text
-data/generated/customer_activity/customer_activity_events.jsonl
-```
-
-Stop the producer with `Control + C`.
-
-### Simulation limitation
-
-The events are synthetic, not observed customer behaviour.
-
-Customer and product IDs come from the source dataset, but their pairing and activity details are generated. Cart values are simulated rather than calculated from a reconciled product-price master.
-
-The current generator does not enforce a complete browsing-to-checkout sequence or maintain a consistent shopping cart.
+**Important:** the finalized static datasets have already been streamed during project development. Re-running full static producers will publish another copy of the events to Kafka unless the pipeline is intentionally being rebuilt.
 
 ---
 
-## 13. Consumer Behaviour
+## 15. Running Consumers
 
-The Python consumer:
-
-- Subscribes to `supply_chain_events`.
-- Deserializes JSON messages.
-- Prints source, event type, entity and payload.
-- Maintains source-level counts for the current process.
-- Prints counts every five received messages.
-
-It uses:
-
-```text
-Consumer group: supply-chain-assignment2
-Offset reset: earliest
-Automatic offset commits: enabled
-```
-
-`earliest` is used when the consumer group has no valid committed offset. Subsequent runs normally resume from the group's committed offsets instead of replaying everything.
-
-Counts printed by the script are session counts, not permanent database totals.
-
-### Console consumer alternative
-
-To inspect messages with Kafka's built-in tool:
+MongoDB:
 
 ```bash
-docker compose exec kafka kafka-console-consumer.sh \
-  --bootstrap-server localhost:9092 \
-  --topic supply_chain_events \
-  --from-beginning
+python consumers/mongodb_consumer.py
 ```
 
-Press `Control + C` to stop.
+Historical weather → MySQL:
 
-With three partitions, Kafka preserves order within each partition, not one global order across all messages.
+```bash
+python consumers/mysql_consumer.py
+```
+
+The historical-weather MySQL consumer intentionally ignores all other Kafka event types.
 
 ---
 
-## 14. Troubleshooting
+## 16. Validated Final Counts
 
-### Port already allocated
+| Dataset / table | Final count |
+|---|---:|
+| Orders | 51,290 |
+| Customers | 1,590 |
+| Inventory | 284,755 |
+| Retail Sales | 125,751 |
+| Manufacturing | 10,000 |
+| Logistics | 10,999 |
+| Customer Activity | 41 |
+| Historical Weather | 21,376 |
 
-Another application or Docker project is using a required port.
+Historical weather additionally validates:
 
-Inspect running containers:
-
-```bash
-docker ps
-```
-
-Stop only the conflicting container or adjust the port configuration.
-
-### Kafka connection failure
-
-Check:
-
-```bash
-docker compose ps
-docker compose logs --tail=50 kafka zookeeper
-```
-
-Confirm Docker is running and the broker is reachable at `localhost:9092`.
-
-### File not found
-
-The full local datasets are intentionally excluded from Git.
-
-For a fresh clone, use:
-
-```bash
-python sample_producer.py
-```
-
-The other static producers require the local files listed earlier.
-
-### Excel reports zero worksheets
-
-An inventory workbook encountered an Excel-reader compatibility issue during development.
-
-The affected retail files were exported through Excel as CSV UTF-8, and their producers were changed to use `pandas.read_csv()`.
-
-Renaming an extension is not a format conversion.
-
-### VS Code cannot resolve an import
-
-Select the project interpreter using:
-
-```text
-Python: Select Interpreter
-```
-
-Choose the Python executable inside `venv`.
-
-A successful syntax check does not verify imports or runtime connectivity.
-
-### Consumer waits without printing
-
-It may already have consumed the available messages.
-
-Leave it running and start a producer in another terminal.
-
-### Weather request failure
-
-Check internet access and API availability. The current weather script exits on a request error; automatic retry and backoff are future improvements.
+- 359 distinct locations
+- 21,376 unique `location_id + weather_date` pairs
+- no missing temperature, humidity, precipitation or wind values in the finalized historical dataset
 
 ---
 
-## 15. Scope and Limitations
+## 17. Data Safety and Repository Hygiene
 
-This is a classroom streaming-ingestion prototype.
+The repository intentionally excludes:
 
-Current limitations include:
+- `venv/`
+- `.env`
+- Python caches
+- MySQL dump files
+- MongoDB BSON migration exports
+- temporary NASA POWER cache files
+- local logs
 
-- Static datasets are replayed, not captured through change-data capture.
-- Some cross-dataset identifiers are temporary.
-- Inventory and retail products are not fully reconciled with Global Superstore products.
-- Manufacturing-to-product mapping is not implemented.
-- Weather uses reference-city proxies.
-- Customer behaviour is simulated.
-- Several producers reuse sequence-based identifiers across runs.
-- Exactly-once delivery and deduplication are not implemented.
-- A standardized event-time field and event-time joins are not implemented.
-- Spark transformations and database sinks are not implemented.
-- Durable storage and retention policies have not been hardened for production.
+Do not commit:
 
-The Kafka configuration advertises `localhost:9092` for Python programs running on the host machine. A future Spark application running inside Docker will require suitable internal Kafka listener configuration.
+- MongoDB Atlas credentials
+- cloud-database credentials
+- API secrets
+- production passwords
 
----
-
-## 16. Local Development Safety
-
-The supplied Docker configuration is intended for local coursework only.
-
-It includes development database credentials and exposed service ports. Do not deploy it unchanged on a public server.
-
-Do not commit real credentials, API secrets or private datasets.
-
-The virtual environment and large working datasets are excluded using `.gitignore`.
-
-To stop the stack without intentionally removing containers:
-
-```bash
-docker compose stop
-```
-
-Avoid destructive volume-cleanup commands if stored project data is needed.
+The Docker credentials in `docker-compose.yml` are local coursework defaults and should not be used for any public deployment.
 
 ---
 
-## 17. Assignment 2 Submission
+## 18. Project Status
 
-The repository provides:
+### Implemented
 
-- A 50-record JSON sample
-- A directly runnable sample producer
-- A separate main producer for local cleaned datasets
-- Individual static and live-source producers
-- A Python consumer
-- Dependency and Docker configuration files
-- Setup and execution instructions
+- Finalized cross-dataset identifiers
+- Full static-source producers
+- Kafka topic and event flow
+- Customer-activity generation
+- Historical NASA POWER weather integration
+- MongoDB persistence
+- MongoDB Atlas persistence
+- MySQL persistence
+- Customer reference-table loading
+- Verified cross-dataset relationships
+- Grafana dashboard
+- Financial Year and cascading business filters
+- Supply-chain control-tower visualizations
 
-Producer and consumer terminal evidence, along with Docker screenshots, is supplied separately in the Assignment 2 GitHub issue.
+### Optional / future work
 
-The quickest faculty demonstration is:
-
-```bash
-python consumers/supply_chain_consumer.py
-```
-
-In another terminal:
-
-```bash
-python sample_producer.py
-```
-
----
-
-## 18. Future Development
-
-Planned improvements include:
-
-- Validating and standardizing cross-source relationships
-- Building product, customer, warehouse and location master tables
-- Replacing temporary shipment mappings
-- Matching weather to verified destination locations
-- Adding consistent event timestamps and unique identifiers
-- Improving customer-session simulation
-- Adding API retries and delivery-error handling
-- Integrating Spark Structured Streaming
-- Writing processed records to databases
-- Building supply-chain monitoring and analytics
+- Spark / Flink processing layer
+- cloud-hosted database for a permanently available public dashboard
+- hardened secrets management
+- production-grade infrastructure and observability
 
 ---
 
-## 19. References and Attribution
+## 19. Dashboard Scope and Business Interpretation
 
-- [SDA course material](https://aditya-dua.github.io/SDA/index.html)
-- [Global Superstore dataset repository](https://github.com/sa-diq/Global_superstore_analytics)
-- [Open-Meteo API documentation](https://open-meteo.com/en/docs)
+The dashboard is an analytical classroom implementation. It should not be interpreted as a production supply-chain system.
 
-The pipeline follows the producer/consumer concepts demonstrated in the course, adapted to supply-chain data.
+Weather exposure analysis uses project-defined analytical bands for precipitation and wind. Those thresholds are **not NASA-defined disruption thresholds** and they do not establish causality between weather and shipment delay.
 
-Source datasets are third-party data. Enrichment fields and generated events are project additions; the underlying datasets are not claimed as original work.
+Customer activity is simulated rather than observed customer behaviour.
 
-AI assistance was used in developing and troubleshooting the implementation. Scripts were adapted and executed locally during project development.
+Static business datasets are replayed into Kafka to demonstrate streaming architecture.
+
+---
+
+## 20. References
+
+- SDA course material: http://sda.adityadua.com/index.html
+- NASA POWER: https://power.larc.nasa.gov/
+- NASA POWER Daily API endpoint used in the project: https://power.larc.nasa.gov/api/temporal/daily/point
+- Apache Kafka: https://kafka.apache.org/
+- Grafana: https://grafana.com/
+- MongoDB: https://www.mongodb.com/
+- MySQL: https://www.mysql.com/
+
+---
+
+## 21. Academic Note
+
+This repository was developed as a coursework and portfolio project.
+
+Third-party datasets remain attributable to their original sources. Project-specific enrichment, cross-dataset identifiers, generated activity events, streaming logic, persistence logic, weather integration and dashboard design were developed as part of the project workflow.
+
+AI assistance was used during development, debugging, validation and documentation.
